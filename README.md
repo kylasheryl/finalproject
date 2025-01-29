@@ -1,2 +1,1 @@
-# zaliapin-zion-declustering
-Clustering Analysis based on Zaliapin &amp; Ben-Zion's nearest neighbor method on global earthquake catalog
+SPATIO-TEMPORAL-MAGNITUDE STATISTICAL ANALYSIS FOR DISTINGUISHING BETWEEN NATURAL AND INDUCED SEISMICITY IN THE X GEOTHERMAL FIELD
