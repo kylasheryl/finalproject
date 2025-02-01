@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import matplotlib
+matplotlib.use("Tkagg")
 
 def plot_gr_distribution(filepath):
     data = pd.read_csv(filepath, sep='\t', header=None, 
@@ -43,7 +45,7 @@ def plot_gr_distribution(filepath):
     
     return {'a_value': a_value, 'b_value': b_value, 'mc_value': mc_value}
 
-file_path = r"D:\TA\CODE\Main Python\MEQHULULAIS.txt"
+file_path = "MEQHULULAIS.txt"
 results = plot_gr_distribution(file_path)
 print(f"\nHasil Analisis:")
 print(f"a-value = {results['a_value']:.4f}")

@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("Tkagg")
 
-file_path = r"D:\TA\CODE\Main Python\MEQHULULAIS.txt"
+file_path = "MEQHULULAIS.txt"
 data = pd.read_csv(file_path, sep='\t', header=None, 
                    names=['year', 'month', 'day', 'hour', 'min', 'sec', 
                           'latitude', 'longitude', 'depth', 'mag'])

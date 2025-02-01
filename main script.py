@@ -3,6 +3,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
 from scipy.ndimage import gaussian_filter
+import matplotlib
+matplotlib.use("Tkagg")
 
 def latlonkm(coord1, coord2):
     return np.sqrt((coord1[0] - coord2[:, 0])**2 + (coord1[1] - coord2[:, 1])**2)
@@ -56,7 +58,7 @@ def day_of_year(year, month, day):
     return sum(days[:month-1]) + day
 
 # Main Script
-cat = pd.read_csv('/TA/CODE/Main Python//MEQHULULAIS.txt', sep='\s+').values
+cat = pd.read_csv('MEQHULULAIS.txt', sep='\s+').values
 year, month, day = cat[:,0].astype(int), cat[:,1].astype(int), cat[:,2].astype(int)
 hour, minute, sec = cat[:,3].astype(int), cat[:,4].astype(int), cat[:,5].astype(float)
 mag, Lon, Lat = cat[:,9].astype(float), cat[:,7].astype(float), cat[:,6].astype(float)
