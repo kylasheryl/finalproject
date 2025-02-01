@@ -34,7 +34,7 @@ if len(filtered_data) > 1:
     counts, bin_edges = np.histogram(normalized_times, bins=time_bins, density=True)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
     
-    C, gamma, B = 0.5, 0.67, 1.58
+    C, gamma, B = 0.5, 0.43, 1.58
     custom_pdf = C * bin_centers**(gamma - 1) * np.exp(-bin_centers / B)
     
     plt.figure(figsize=(6, 5))
