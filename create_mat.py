@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-'''
-Modified version to work with new SeismicCatalog structure
-'''
 import os
 import sys
 import numpy as np
