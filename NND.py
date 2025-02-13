@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-'''
-Modified version for nearest-neighbor distance analysis 
-Maintains original GitHub workflow
-'''
 import os
 import matplotlib.pyplot as plt
 import numpy as np
