@@ -6,7 +6,6 @@ import numpy as np
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(script_dir))
 
-# Now import from src
 from src.SeismicCatalog import SeismicCatalog
 
 def main():
