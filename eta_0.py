@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-'''
-Modified version for calculating eta_0 parameter using new modules
-'''
 import os
 import matplotlib.pyplot as plt
 import numpy as np
