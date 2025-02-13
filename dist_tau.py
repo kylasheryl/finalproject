@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Modified script for distance-time analysis using new modules
-Maintains original GitHub logic
-"""
 import os
 import numpy as np
 import matplotlib.pyplot as plt
