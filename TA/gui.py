@@ -207,7 +207,7 @@ def calculate_parameters():
         progress_window.update()
         
         # ---------------------------------------------------------
-        # Calculate Mc and b-value using improved FMD class from gr.py
+        # Calculate Mc and b-value using improved FMD class
         # ---------------------------------------------------------
         magnitudes = eqCat.data['Mag']
         
@@ -215,7 +215,7 @@ def calculate_parameters():
         oFMD = FMD()
         oFMD.data['mag'] = magnitudes
         
-        # Add small random perturbation to magnitudes (as in gr.py)
+        # Add small random perturbation to magnitudes
         binsize = 0.1
         a_RanErr = np.random.randn(len(magnitudes)) * binsize * 0.4
         oFMD.data['mag'] += a_RanErr
@@ -241,7 +241,7 @@ def calculate_parameters():
         progress_window.update()
         
         # ---------------------------------------------------------
-        # Calculate fractal dimension using improved method from dimension.py
+        # Calculate fractal dimension
         # ---------------------------------------------------------
         # First convert to cartesian coordinates
         eqCat.toCart_coordinates(projection='eqdc')
@@ -284,14 +284,14 @@ def update_parameter_plots(eqCat, magnitudes, Mc, b_value, D, oFMD, r_values, C_
     for widget in output_notebook.tabs():
         output_notebook.forget(widget)
     
-    # Create Mc and b-value plot tab using plotFit from gr.py
+    # Create Mc and b-value plot tab using plotFit
     tab1 = ttk.Frame(output_notebook)
     output_notebook.add(tab1, text='Magnitude Distribution')
     
     fig1 = Figure(figsize=(6, 4))
     ax1 = fig1.add_subplot(111)
     
-    # Plot using FMD plotting function from gr.py
+    # Plot using FMD plotting function
     oFMD.plotFit(ax1)
     fig1.tight_layout()
     
@@ -319,7 +319,7 @@ def update_parameter_plots(eqCat, magnitudes, Mc, b_value, D, oFMD, r_values, C_
     tab3 = ttk.Frame(output_notebook)
     output_notebook.add(tab3, text='Fractal Dimension')
     
-    # Get log values directly as in dimension.py
+    # Get log values 
     log_r = np.log10(r_values)
     
     # Get r_min and r_max for display
@@ -329,11 +329,10 @@ def update_parameter_plots(eqCat, magnitudes, Mc, b_value, D, oFMD, r_values, C_
     fig3 = Figure(figsize=(6, 4))
     ax3 = fig3.add_subplot(111)
     
-    # Plot dimension vs log(r) exactly like dimension.py
+    # Plot dimension vs log(r) 
     ax3.grid(True, alpha=0.3)
     ax3.plot(log_r, d_corr, 'ro', label='Correlation Dimension')
     
-    # Tambahkan garis horizontal untuk nilai D yang telah dihitung
     ax3.axhline(y=D, color='blue', linestyle='-', linewidth=2, label=f'D = {D:.2f}', zorder=10)
     
     ax3.axvline(x=r_min, color='blue', linestyle='--', label=f'r_min = {r_min:.2f}', zorder=5)
