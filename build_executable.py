@@ -58,7 +58,7 @@ if not os.path.exists(SOURCE_FILE):
 
 # Check if the script needs patching
 print("Checking if the GUI script needs patching...")
-with open(SOURCE_FILE, 'r') as f:
+with open(SOURCE_FILE, 'r', encoding='utf-8') as f:
     gui_content = f.read()
 
 # Define the patch code
