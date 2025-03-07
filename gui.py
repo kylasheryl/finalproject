@@ -10,6 +10,46 @@ from scipy.spatial.distance import pdist
 import pandas as pd
 from src.EqCat import EqCat
 from src import clustering, data_utils
+import warnings
+import sys
+
+# Handle missing Basemap library
+try:
+    import mpl_toolkits.basemap
+    basemap_available = True
+except ImportError:
+    basemap_available = False
+    warnings.warn("Basemap is not available. Using fallback coordinate conversion.")
+    
+    # Try to import the custom coordinate conversion module
+    try:
+        from coordinate_conversion import simple_cartesian_conversion
+    except ImportError:
+        # If the module doesn't exist, create it on the fly
+        def simple_cartesian_conversion(eqCat):
+            """Simple cartesian coordinate conversion without requiring Basemap"""
+            import numpy as np
+            
+            # Earth radius in kilometers
+            R = 6371.0
+            
+            # Get reference point (center of the data)
+            lat0 = np.mean(eqCat.data['Lat'])
+            lon0 = np.mean(eqCat.data['Lon'])
+            
+            # Convert to radians
+            lat0_rad = np.radians(lat0)
+            lon0_rad = np.radians(lon0)
+            lat_rad = np.radians(eqCat.data['Lat'])
+            lon_rad = np.radians(eqCat.data['Lon'])
+            
+            # Calculate X and Y coordinates (equirectangular projection)
+            # X = R * (lon - lon0) * cos(lat0)
+            # Y = R * (lat - lat0)
+            eqCat.data['X'] = R * (lon_rad - lon0_rad) * np.cos(lat0_rad)
+            eqCat.data['Y'] = R * (lat_rad - lat0_rad)
+            
+            return
 
 class FMD:
     def __init__(self):
@@ -350,6 +390,20 @@ def calculate_parameters():
         
         progress_var.set(50)
         progress_window.update()
+
+        # Convert coordinates to cartesian - with fallback for missing Basemap
+        try:
+            if not basemap_available:
+                # Use the simple conversion if Basemap is not available
+                simple_cartesian_conversion(eqCat)
+            else:
+                # Use the original method if Basemap is available
+                eqCat.toCart_coordinates(projection='eqdc')
+        except Exception as e:
+            status_var.set(f"Error in coordinate conversion: {str(e)}")
+            status_label.config(fg="red")
+            progress_window.destroy()
+            return
         
         # ---------------------------------------------------------
         # Calculate fractal dimension using improved method from dimension.py
@@ -555,7 +609,21 @@ def run_analysis():
         
         # Select events above magnitude cutoff
         eqCat.selectEvents(M_c, None, 'Mag')
-        eqCat.toCart_coordinates(projection='eqdc')
+        
+        # Convert coordinates to cartesian - with fallback for missing Basemap
+        try:
+            if not basemap_available:
+                # Use the simple conversion if Basemap is not available
+                simple_cartesian_conversion(eqCat)
+            else:
+                # Use the original method if Basemap is available
+                eqCat.toCart_coordinates(projection='eqdc')
+        except Exception as e:
+            status_var.set(f"Error in coordinate conversion: {str(e)}")
+            status_label.config(fg="red")
+            messagebox.showerror("Error", f"Coordinate conversion error: {str(e)}")
+            return
+            
         status_var.set(f"Events after selection: {eqCat.size()}")
         root.update()
         
@@ -681,7 +749,7 @@ def run_analysis():
         clear_output_plots()
         
         # Get base filename for saving figures
-        output_base = os.path.basename(file_path).replace('.mat', '').replace('.csv', '')
+        figure_base_name = output_base
         if custom_suffix:
             figure_base_name = f"{output_base}_Mc_{M_c}{custom_suffix}"
         else:
