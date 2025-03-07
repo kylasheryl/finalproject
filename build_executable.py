@@ -2,6 +2,7 @@
 Build Executable for Earthquake Clustering Analysis GUI
 -------------------------------------------------------
 This script creates a Windows executable (.exe) file using PyInstaller.
+It completely avoids the Basemap dependency.
 
 Usage:
 1. Save your main GUI script as 'earthquake_clustering_gui.py'
@@ -48,48 +49,34 @@ def install_package(package):
 # Install PyInstaller if not already installed
 install_package("pyinstaller")
 
-# Try to install basemap (which can be problematic)
-try:
-    # Check if basemap is already installed
-    try:
-        import mpl_toolkits.basemap
-        print("Basemap is already installed.")
-        basemap_installed = True
-    except ImportError:
-        print("Basemap is not installed. Attempting to install...")
-        
-        # First try installing via pip
-        result = subprocess.call([sys.executable, "-m", "pip", "install", "basemap"])
-        basemap_installed = (result == 0)
-        
-        if not basemap_installed:
-            print("Warning: Could not install Basemap via pip.")
-            print("You may need to install it with conda: conda install basemap")
-            print("Continuing with build process, but the application might use a fallback method for coordinate conversion.")
-except Exception as e:
-    print(f"Error checking/installing Basemap: {e}")
-    basemap_installed = False
+# Make sure main script exists
+SOURCE_FILE = "earthquake_clustering_gui.py"
+if not os.path.exists(SOURCE_FILE):
+    print(f"Error: Could not find source file '{SOURCE_FILE}'")
+    print("Please make sure your main script is named 'earthquake_clustering_gui.py'")
+    sys.exit(1)
 
-# Create a coordinate conversion module if basemap isn't installed
-if not basemap_installed:
-    print("Creating a fallback cartesian conversion module...")
-    # Create coordinate_conversion.py with fallback methods
-    with open("coordinate_conversion.py", "w") as f:
-        f.write("""
-import numpy as np
+# Check if the script needs patching
+print("Checking if the GUI script needs patching...")
+with open(SOURCE_FILE, 'r') as f:
+    gui_content = f.read()
+
+# Define the patch code
+patch_code = """
+# ------ BASEMAP AVOIDANCE PATCH ------
+import os
+import sys
 import warnings
 
+# Before any other imports, disable Basemap completely
+# This prevents even the import attempt that's causing the error
+sys.modules['mpl_toolkits.basemap'] = None
+
+# Define our own cartesian conversion function
 def simple_cartesian_conversion(eqCat):
-    \"\"\"
-    Simple cartesian coordinate conversion without requiring Basemap
-    Uses an equirectangular projection centered on the data
+    \"\"\"Simple cartesian coordinate conversion without Basemap\"\"\"
+    import numpy as np
     
-    Parameters:
-        eqCat: EqCat object with Lat and Lon data
-    
-    Returns:
-        None (modifies eqCat in place, adding 'X' and 'Y' keys)
-    \"\"\"
     # Earth radius in kilometers
     R = 6371.0
     
@@ -104,151 +91,45 @@ def simple_cartesian_conversion(eqCat):
     lon_rad = np.radians(eqCat.data['Lon'])
     
     # Calculate X and Y coordinates (equirectangular projection)
-    # X = R * (lon - lon0) * cos(lat0)
-    # Y = R * (lat - lat0)
     eqCat.data['X'] = R * (lon_rad - lon0_rad) * np.cos(lat0_rad)
     eqCat.data['Y'] = R * (lat_rad - lat0_rad)
     
     return
 
-def safe_cartesian_conversion(eqCat, projection='eqdc'):
-    \"\"\"
-    Safely convert to cartesian coordinates, falling back to a simple method if Basemap fails
-    
-    Parameters:
-        eqCat: EqCat object with Lat and Lon data
-        projection: Projection to use if Basemap is available
-    
-    Returns:
-        None (modifies eqCat in place, adding 'X' and 'Y' keys)
-    \"\"\"
-    # Try to use the original toCart_coordinates method
-    try:
-        original_result = eqCat.toCart_coordinates(projection=projection)
-        return original_result
-    except Exception as basemap_error:
-        warnings.warn(f"Basemap conversion failed: {str(basemap_error)}. Using simple cartesian conversion instead.")
-        
-        # If that fails, use our simple cartesian conversion
-        simple_cartesian_conversion(eqCat)
-        return
-""")
-    print("Created coordinate_conversion.py with fallback methods")
+# Enable this flag for your functions to use
+use_simple_conversion = True
+# ------ END OF BASEMAP AVOIDANCE PATCH ------
+"""
 
-# Check for the patch_eqcat script and create it if needed
-if not os.path.exists("patch_eqcat.py"):
-    print("Creating a script to patch the EqCat class...")
-    with open("patch_eqcat.py", "w") as f:
-        f.write("""
-# Patch the EqCat class to use the fallback cartesian conversion when needed
-import sys
-import os
-import importlib.util
-
-def patch_eqcat():
-    \"\"\"
-    Patch the EqCat class to use our fallback coordinate conversion if needed
-    This function should be called before importing EqCat
-    \"\"\"
-    # First check if the src directory exists
-    src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
-    if not os.path.exists(src_dir):
-        return False  # Can't patch what doesn't exist
-        
-    eqcat_path = os.path.join(src_dir, 'EqCat.py')
-    if not os.path.exists(eqcat_path):
-        return False  # EqCat.py doesn't exist
+# Check if the patch is already applied
+if "sys.modules['mpl_toolkits.basemap'] = None" not in gui_content:
+    print("Patching the GUI script to completely avoid Basemap...")
     
-    # Load the EqCat module
-    spec = importlib.util.spec_from_file_location("EqCat", eqcat_path)
-    eqcat_module = importlib.util.module_from_spec(spec)
-    sys.modules["EqCat"] = eqcat_module
-    spec.loader.exec_module(eqcat_module)
+    # Find the first import statement
+    import_lines = [i for i, line in enumerate(gui_content.split('\n')) if 
+                   line.strip().startswith('import ') or line.strip().startswith('from ')]
     
-    # Check if we need to patch it
-    try:
-        import mpl_toolkits.basemap
-        # Basemap exists, no need to patch
-        return True
-    except ImportError:
-        # Basemap not available, patch the method
-        from coordinate_conversion import safe_cartesian_conversion
+    if import_lines:
+        first_import = import_lines[0]
+        # Insert our patch before the first import
+        lines = gui_content.split('\n')
+        patched_content = '\n'.join(lines[:first_import]) + patch_code + '\n'.join(lines[first_import:])
         
-        # Store the original method
-        original_method = eqcat_module.EqCat.toCart_coordinates
-        
-        # Create a patched method that uses our safe conversion
-        def patched_toCart_coordinates(self, projection='eqdc'):
-            try:
-                return safe_cartesian_conversion(self, projection)
-            except Exception as e:
-                print(f"Error in coordinate conversion: {e}")
-                raise
-        
-        # Replace the method
-        eqcat_module.EqCat.toCart_coordinates = patched_toCart_coordinates
-        return True
-""")
-    print("Created patch_eqcat.py to handle Basemap issues")
-
-# Make sure main script exists
-SOURCE_FILE = "earthquake_clustering_gui.py"
-if not os.path.exists(SOURCE_FILE):
-    print(f"Error: Could not find source file '{SOURCE_FILE}'")
-    print("Please make sure your main script is named 'earthquake_clustering_gui.py'")
-    sys.exit(1)
-
-# Check if we need to patch the GUI script
-patch_needed = not basemap_installed
-if patch_needed:
-    print("Checking if the GUI script needs patching for coordinate conversion...")
-    with open(SOURCE_FILE, 'r') as f:
-        gui_content = f.read()
-    
-    # Check if the script already includes our patch
-    if "from coordinate_conversion import" not in gui_content and "import patch_eqcat" not in gui_content:
-        print("Patching the GUI script to handle missing Basemap...")
-        # Add import for the patch at the beginning of the file, after other imports
-        with open(SOURCE_FILE, 'r') as f:
-            lines = f.readlines()
-        
-        # Find a good spot to insert our patch - after imports but before code
-        insert_line = 0
-        for i, line in enumerate(lines):
-            if line.strip().startswith("import ") or line.strip().startswith("from "):
-                insert_line = i + 1
-        
-        # Add our patch code
-        patch_code = [
-            "\n# Handle missing Basemap library if needed\n",
-            "try:\n",
-            "    # Try to import patch_eqcat if it exists\n",
-            "    import patch_eqcat\n",
-            "    patch_eqcat.patch_eqcat()\n",
-            "except ImportError:\n",
-            "    # If not available, try direct import of coordinate_conversion\n",
-            "    try:\n",
-            "        from coordinate_conversion import safe_cartesian_conversion\n",
-            "    except ImportError:\n",
-            "        pass  # Will use original method, hoping Basemap is available\n\n"
-        ]
-        
-        lines = lines[:insert_line] + patch_code + lines[insert_line:]
-        
-        # Also patch the calculate_parameters and run_analysis functions to use safe conversion
-        for i, line in enumerate(lines):
-            if "eqCat.toCart_coordinates(projection='eqdc')" in line:
-                indent = ' ' * (len(line) - len(line.lstrip()))
-                lines[i] = line.replace(
-                    "eqCat.toCart_coordinates(projection='eqdc')", 
-                    "safe_cartesian_conversion(eqCat, projection='eqdc') if 'safe_cartesian_conversion' in globals() else eqCat.toCart_coordinates(projection='eqdc')"
-                )
+        # Now find the cartesian conversion calls and replace them
+        patched_content = patched_content.replace(
+            "eqCat.toCart_coordinates(projection='eqdc')", 
+            "simple_cartesian_conversion(eqCat)"
+        )
         
         # Save the patched file
         with open(SOURCE_FILE, 'w') as f:
-            f.writelines(lines)
+            f.writelines(patched_content)
         
-        print("GUI script patched successfully to handle missing Basemap")
+        print("GUI script patched successfully to avoid Basemap completely")
+    else:
+        print("Warning: Could not find import statements in the script. Manual patching may be required.")
+else:
+    print("GUI script already patched to avoid Basemap")
 
 # Create a folder for the icon if it doesn't exist
 if not os.path.exists("icons"):
@@ -305,11 +186,21 @@ for folder in ["src", "data"]:
         data_folders.append(folder)
         print(f"Found data folder: {folder}")
 
-# Add the patching scripts to the data files if they exist
-extra_data_files = []
-for file in ["coordinate_conversion.py", "patch_eqcat.py"]:
-    if os.path.exists(file):
-        extra_data_files.append((file, "."))
+# Create a runtime hook to exclude Basemap
+hook_file = "disable_basemap_hook.py"
+with open(hook_file, "w") as f:
+    f.write("""
+# Runtime hook to disable Basemap import
+import sys
+import warnings
+
+# Disable the import warning
+warnings.filterwarnings('ignore', message='.*basemap.*')
+
+# Mock the Basemap module
+sys.modules['mpl_toolkits.basemap'] = None
+""")
+print(f"Created runtime hook to disable Basemap")
 
 # Build the PyInstaller command
 command = [
@@ -317,6 +208,10 @@ command = [
     "--name", APP_NAME,
     "--onefile",
     "--windowed",
+    "--runtime-hook", hook_file,
+    # Exclude problematic packages
+    "--exclude-module", "mpl_toolkits.basemap",
+    "--exclude-module", "basemap",
 ]
 
 # Add icon if available
@@ -327,13 +222,8 @@ if ICON_FILE and os.path.exists(ICON_FILE):
 for folder in data_folders:
     command.extend(["--add-data", f"{folder};{folder}"])
 
-# Add the additional data files if any
-for src, dst in extra_data_files:
-    command.extend(["--add-data", f"{src};{dst}"])
-
 # Add hidden imports for difficult modules
 command.extend(["--hidden-import", "scipy.spatial.transform._rotation_groups"])
-command.extend(["--hidden-import", "mpl_toolkits.basemap"]) # Try to include basemap even if not available
 
 # Add the source file
 command.append(SOURCE_FILE)
@@ -365,11 +255,6 @@ try:
                     shutil.copy(sample, os.path.join(sample_dir, sample))
                 print(f"Copied sample {ext} files to {sample_dir}")
                 
-        # Copy patch files to the dist directory if they exist
-        for file in ["coordinate_conversion.py", "patch_eqcat.py"]:
-            if os.path.exists(file):
-                shutil.copy(file, os.path.join("dist", file))
-                
     else:
         print("\nError: Could not find the generated executable.")
         print("Check the 'dist' directory manually.")
@@ -377,6 +262,6 @@ except subprocess.CalledProcessError as e:
     print(f"\nError building executable: {e}")
     print("See PyInstaller output above for details.")
 
-print("\nNote: If your application requires additional data files or modules,")
-print("you may need to modify this script to include them.")
+print("\nNote: This executable completely avoids using Basemap.")
+print("It uses a simplified coordinate conversion method instead.")
 print("\nTo distribute your application, share the contents of the 'dist' folder.")

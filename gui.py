@@ -1,3 +1,44 @@
+"""
+Earthquake Clustering Analysis GUI
+---------------------------------
+A GUI application for analyzing earthquake clustering using Nearest-Neighbor Distance (NND) methodology.
+This version has all Basemap dependencies removed, replaced with a simple cartesian projection.
+"""
+
+# ---- BASEMAP AVOIDANCE - ADD THIS AT THE VERY BEGINNING ----
+import os
+import sys
+import warnings
+
+# Before any other imports, disable Basemap completely
+sys.modules['mpl_toolkits.basemap'] = None
+
+# Define our own cartesian conversion function
+def simple_cartesian_conversion(eqCat):
+    """Simple cartesian coordinate conversion without Basemap"""
+    import numpy as np
+    
+    # Earth radius in kilometers
+    R = 6371.0
+    
+    # Get reference point (center of the data)
+    lat0 = np.mean(eqCat.data['Lat'])
+    lon0 = np.mean(eqCat.data['Lon'])
+    
+    # Convert to radians
+    lat0_rad = np.radians(lat0)
+    lon0_rad = np.radians(lon0)
+    lat_rad = np.radians(eqCat.data['Lat'])
+    lon_rad = np.radians(eqCat.data['Lon'])
+    
+    # Calculate X and Y coordinates (equirectangular projection)
+    eqCat.data['X'] = R * (lon_rad - lon0_rad) * np.cos(lat0_rad)
+    eqCat.data['Y'] = R * (lat_rad - lat0_rad)
+    
+    return
+# ---- END OF BASEMAP AVOIDANCE ----
+
+# Regular imports
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import numpy as np
@@ -10,46 +51,6 @@ from scipy.spatial.distance import pdist
 import pandas as pd
 from src.EqCat import EqCat
 from src import clustering, data_utils
-import warnings
-import sys
-
-# Handle missing Basemap library
-try:
-    import mpl_toolkits.basemap
-    basemap_available = True
-except ImportError:
-    basemap_available = False
-    warnings.warn("Basemap is not available. Using fallback coordinate conversion.")
-    
-    # Try to import the custom coordinate conversion module
-    try:
-        from coordinate_conversion import simple_cartesian_conversion
-    except ImportError:
-        # If the module doesn't exist, create it on the fly
-        def simple_cartesian_conversion(eqCat):
-            """Simple cartesian coordinate conversion without requiring Basemap"""
-            import numpy as np
-            
-            # Earth radius in kilometers
-            R = 6371.0
-            
-            # Get reference point (center of the data)
-            lat0 = np.mean(eqCat.data['Lat'])
-            lon0 = np.mean(eqCat.data['Lon'])
-            
-            # Convert to radians
-            lat0_rad = np.radians(lat0)
-            lon0_rad = np.radians(lon0)
-            lat_rad = np.radians(eqCat.data['Lat'])
-            lon_rad = np.radians(eqCat.data['Lon'])
-            
-            # Calculate X and Y coordinates (equirectangular projection)
-            # X = R * (lon - lon0) * cos(lat0)
-            # Y = R * (lat - lat0)
-            eqCat.data['X'] = R * (lon_rad - lon0_rad) * np.cos(lat0_rad)
-            eqCat.data['Y'] = R * (lat_rad - lat0_rad)
-            
-            return
 
 class FMD:
     def __init__(self):
@@ -203,6 +204,20 @@ def compute_correlation_dimension(coords):
     except Exception as e:
         print(f"Error in compute_correlation_dimension: {e}")
         return 1.6, np.logspace(0, 3, 30), np.logspace(-3, 0, 30), np.ones(30) * 1.6
+
+def save_figure(fig, name, dpi=300):
+    """Save figure to file with specified DPI"""
+    file_path = filedialog.asksaveasfilename(
+        defaultextension=".png",
+        filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("PDF", "*.pdf"), ("SVG", "*.svg")],
+        initialfile=name
+    )
+    if file_path:
+        try:
+            fig.savefig(file_path, dpi=dpi, bbox_inches='tight')
+            messagebox.showinfo("Save Successful", f"Figure saved to:\n{file_path}")
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Failed to save figure: {str(e)}")
 
 def show_tooltip(title, text):
     # Function to show tooltip with parameter description
@@ -390,15 +405,12 @@ def calculate_parameters():
         
         progress_var.set(50)
         progress_window.update()
-
-        # Convert coordinates to cartesian - with fallback for missing Basemap
+        
+        # ---------------------------------------------------------
+        # Convert to cartesian coordinates using our simple method
+        # ---------------------------------------------------------
         try:
-            if not basemap_available:
-                # Use the simple conversion if Basemap is not available
-                simple_cartesian_conversion(eqCat)
-            else:
-                # Use the original method if Basemap is available
-                eqCat.toCart_coordinates(projection='eqdc')
+            simple_cartesian_conversion(eqCat)
         except Exception as e:
             status_var.set(f"Error in coordinate conversion: {str(e)}")
             status_label.config(fg="red")
@@ -406,11 +418,8 @@ def calculate_parameters():
             return
         
         # ---------------------------------------------------------
-        # Calculate fractal dimension using improved method from dimension.py
+        # Calculate fractal dimension
         # ---------------------------------------------------------
-        # First convert to cartesian coordinates
-        eqCat.toCart_coordinates(projection='eqdc')
-        
         # Extract coordinates
         coords = np.column_stack((eqCat.data['X'], eqCat.data['Y']))
         
@@ -443,20 +452,6 @@ def calculate_parameters():
         status_var.set(f"Error calculating parameters: {str(e)}")
         status_label.config(fg="red")
         messagebox.showerror("Error", str(e))
-
-def save_figure(fig, name, dpi=300):
-    """Save figure to file with specified DPI"""
-    file_path = filedialog.asksaveasfilename(
-        defaultextension=".png",
-        filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("PDF", "*.pdf"), ("SVG", "*.svg")],
-        initialfile=name
-    )
-    if file_path:
-        try:
-            fig.savefig(file_path, dpi=dpi, bbox_inches='tight')
-            messagebox.showinfo("Save Successful", f"Figure saved to:\n{file_path}")
-        except Exception as e:
-            messagebox.showerror("Save Error", f"Failed to save figure: {str(e)}")
 
 def update_parameter_plots(eqCat, magnitudes, Mc, b_value, D, oFMD, r_values, C_r, d_corr):
     # Clear previous tabs
@@ -521,7 +516,7 @@ def update_parameter_plots(eqCat, magnitudes, Mc, b_value, D, oFMD, r_values, C_
         )
         save_btn2.pack(pady=5)
     
-    # Create fractal dimension plot tab - EXACTLY like dimension.py
+    # Create fractal dimension plot tab
     tab3 = ttk.Frame(output_notebook)
     output_notebook.add(tab3, text='Fractal Dimension')
     
@@ -610,14 +605,9 @@ def run_analysis():
         # Select events above magnitude cutoff
         eqCat.selectEvents(M_c, None, 'Mag')
         
-        # Convert coordinates to cartesian - with fallback for missing Basemap
+        # Convert coordinates to cartesian using our simple method
         try:
-            if not basemap_available:
-                # Use the simple conversion if Basemap is not available
-                simple_cartesian_conversion(eqCat)
-            else:
-                # Use the original method if Basemap is available
-                eqCat.toCart_coordinates(projection='eqdc')
+            simple_cartesian_conversion(eqCat)
         except Exception as e:
             status_var.set(f"Error in coordinate conversion: {str(e)}")
             status_label.config(fg="red")
@@ -997,4 +987,5 @@ output_notebook.add(empty_tab, text="No Results Yet")
 tk.Label(empty_tab, text="Load a file and calculate parameters to see results", 
          font=("Arial", 12)).pack(expand=True, pady=50)
 
-root.mainloop()
+if __name__ == "__main__":
+    root.mainloop()
