@@ -7,6 +7,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import scipy.io
 from scipy.spatial.distance import pdist
+import pandas as pd
 from src.EqCat import EqCat
 from src import clustering, data_utils
 
@@ -163,8 +164,33 @@ def compute_correlation_dimension(coords):
         print(f"Error in compute_correlation_dimension: {e}")
         return 1.6, np.logspace(0, 3, 30), np.logspace(-3, 0, 30), np.ones(30) * 1.6
 
+def show_tooltip(title, text):
+    # Function to show tooltip with parameter description
+    tooltip = tk.Toplevel()
+    tooltip.title(title)
+    tooltip.geometry("400x300")
+    tooltip.resizable(True, True)
+    
+    # Add text with scrollbar
+    frame = ttk.Frame(tooltip)
+    frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    scrollbar = ttk.Scrollbar(frame)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
+    text_widget = tk.Text(frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
+    text_widget.pack(fill=tk.BOTH, expand=True)
+    text_widget.insert(tk.END, text)
+    text_widget.config(state=tk.DISABLED)
+    
+    scrollbar.config(command=text_widget.yview)
+    
+    # Add close button
+    close_button = ttk.Button(tooltip, text="Close", command=tooltip.destroy)
+    close_button.pack(pady=10)
+
 def load_file():
-    file_path = filedialog.askopenfilename(filetypes=[("MAT files", "*.mat")])
+    file_path = filedialog.askopenfilename(filetypes=[("MAT files", "*.mat"), ("CSV files", "*.csv")])
     if file_path:
         entry_file.delete(0, tk.END)
         entry_file.insert(0, file_path)
@@ -175,6 +201,80 @@ def load_file():
         if auto_calculate_var.get():
             calculate_parameters()
 
+def parse_csv_to_eqcat(file_path):
+    """Load earthquake data from CSV file into EqCat format"""
+    try:
+        # Read CSV data
+        df = pd.read_csv(file_path)
+        
+        # Create a new EqCat object
+        eqCat = EqCat()
+        
+        # Initialize data dictionary with empty arrays
+        eqCat.data = {
+            'Lon': np.array([]),
+            'Lat': np.array([]),
+            'Mag': np.array([]),
+            'Time': np.array([]),
+            'Depth': np.array([]),
+            'ID': np.array([]),
+            'N': np.array([])  # Sequence number
+        }
+        
+        # Check for required columns
+        if 'Magnitude' in df.columns or 'Mag' in df.columns:
+            mag_col = 'Magnitude' if 'Magnitude' in df.columns else 'Mag'
+            eqCat.data['Mag'] = np.array(df[mag_col])
+        else:
+            raise ValueError("CSV must contain a 'Magnitude' or 'Mag' column")
+        
+        # Get latitude and longitude
+        if 'Latitude' in df.columns and 'Longitude' in df.columns:
+            eqCat.data['Lat'] = np.array(df['Latitude'])
+            eqCat.data['Lon'] = np.array(df['Longitude'])
+        elif 'Lat' in df.columns and 'Lon' in df.columns:
+            eqCat.data['Lat'] = np.array(df['Lat'])
+            eqCat.data['Lon'] = np.array(df['Lon'])
+        else:
+            raise ValueError("CSV must contain 'Latitude'/'Longitude' or 'Lat'/'Lon' columns")
+        
+        # Get time information - assume decimal year format or convert from date
+        if 'Time' in df.columns:
+            eqCat.data['Time'] = np.array(df['Time'])
+        elif 'Date' in df.columns:
+            # Convert dates to decimal years - simplified approach
+            eqCat.data['Time'] = np.array(
+                pd.to_datetime(df['Date']).apply(
+                    lambda x: x.year + x.dayofyear/366
+                )
+            )
+        else:
+            raise ValueError("CSV must contain a 'Time' or 'Date' column")
+        
+        # Get depth if available
+        if 'Depth' in df.columns:
+            eqCat.data['Depth'] = np.array(df['Depth'])
+        else:
+            eqCat.data['Depth'] = np.zeros_like(eqCat.data['Mag'])
+        
+        # Get ID if available or generate sequence
+        if 'ID' in df.columns:
+            eqCat.data['ID'] = np.array(df['ID'])
+        else:
+            eqCat.data['ID'] = np.arange(len(eqCat.data['Mag']))
+        
+        # Add sequence number
+        eqCat.data['N'] = np.arange(len(eqCat.data['Mag']))
+        
+        # Sort by time
+        eqCat.sortCatalog('Time')
+        
+        return eqCat
+    
+    except Exception as e:
+        messagebox.showerror("CSV Import Error", f"Error importing CSV: {str(e)}")
+        raise e
+
 def clear_output_plots():
     # Clear all tabs in the notebook
     for widget in output_notebook.tabs():
@@ -183,14 +283,23 @@ def clear_output_plots():
 def calculate_parameters():
     file_path = entry_file.get()
     if not file_path:
-        status_var.set("Pilih file katalog gempa terlebih dahulu!")
+        status_var.set("Please select an earthquake catalog file first!")
         status_label.config(fg="red")
         return
     
     try:
-        # Create EqCat object
+        # Create EqCat object based on file type
         eqCat = EqCat()
-        eqCat.loadMatBin(file_path)
+        
+        if file_path.lower().endswith('.mat'):
+            eqCat.loadMatBin(file_path)
+        elif file_path.lower().endswith('.csv'):
+            eqCat = parse_csv_to_eqcat(file_path)
+        else:
+            status_var.set("Unsupported file format")
+            status_label.config(fg="red")
+            return
+            
         status_var.set(f"Total events: {eqCat.size()}")
         status_label.config(fg="blue")
         root.update()
@@ -281,10 +390,35 @@ def calculate_parameters():
         status_label.config(fg="red")
         messagebox.showerror("Error", str(e))
 
+def save_figure(fig, name, dpi=300):
+    """Save figure to file with specified DPI"""
+    file_path = filedialog.asksaveasfilename(
+        defaultextension=".png",
+        filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("PDF", "*.pdf"), ("SVG", "*.svg")],
+        initialfile=name
+    )
+    if file_path:
+        try:
+            fig.savefig(file_path, dpi=dpi, bbox_inches='tight')
+            messagebox.showinfo("Save Successful", f"Figure saved to:\n{file_path}")
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Failed to save figure: {str(e)}")
+
 def update_parameter_plots(eqCat, magnitudes, Mc, b_value, D, oFMD, r_values, C_r, d_corr):
     # Clear previous tabs
     for widget in output_notebook.tabs():
         output_notebook.forget(widget)
+    
+    # Get file basename for saving figures
+    file_path = entry_file.get()
+    if file_path:
+        base_name = os.path.basename(file_path).replace('.mat', '').replace('.csv', '')
+        custom_suffix = entry_suffix.get()
+        if custom_suffix and not custom_suffix.startswith('_'):
+            custom_suffix = '_' + custom_suffix
+        base_name += custom_suffix
+    else:
+        base_name = "earthquake_analysis"
     
     # Create Mc and b-value plot tab using plotFit from gr.py
     tab1 = ttk.Frame(output_notebook)
@@ -301,6 +435,14 @@ def update_parameter_plots(eqCat, magnitudes, Mc, b_value, D, oFMD, r_values, C_
     canvas1.draw()
     canvas1.get_tk_widget().pack(fill=tk.BOTH, expand=True)
     
+    # Add save button for magnitude distribution plot
+    save_btn1 = ttk.Button(
+        tab1, 
+        text="Save Figure (300 DPI)", 
+        command=lambda: save_figure(fig1, f"{base_name}_magnitude_distribution")
+    )
+    save_btn1.pack(pady=5)
+    
     # Create KS statistic plot if available
     if 'a_KS' in oFMD.data:
         tab2 = ttk.Frame(output_notebook)
@@ -316,6 +458,14 @@ def update_parameter_plots(eqCat, magnitudes, Mc, b_value, D, oFMD, r_values, C_
         canvas2 = FigureCanvasTkAgg(fig2, master=tab2)
         canvas2.draw()
         canvas2.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Add save button for KS statistics plot
+        save_btn2 = ttk.Button(
+            tab2, 
+            text="Save Figure (300 DPI)", 
+            command=lambda: save_figure(fig2, f"{base_name}_KS_statistics")
+        )
+        save_btn2.pack(pady=5)
     
     # Create fractal dimension plot tab - EXACTLY like dimension.py
     tab3 = ttk.Frame(output_notebook)
@@ -335,7 +485,7 @@ def update_parameter_plots(eqCat, magnitudes, Mc, b_value, D, oFMD, r_values, C_
     ax3.grid(True, alpha=0.3)
     ax3.plot(log_r, d_corr, 'ro', label='Correlation Dimension')
     
-    # Tambahkan garis horizontal untuk nilai D yang telah dihitung
+    # Add horizontal line for calculated D value
     ax3.axhline(y=D, color='blue', linestyle='-', linewidth=2, label=f'D = {D:.2f}', zorder=10)
     
     ax3.axvline(x=r_min, color='blue', linestyle='--', label=f'r_min = {r_min:.2f}', zorder=5)
@@ -352,13 +502,21 @@ def update_parameter_plots(eqCat, magnitudes, Mc, b_value, D, oFMD, r_values, C_
     canvas3.draw()
     canvas3.get_tk_widget().pack(fill=tk.BOTH, expand=True)
     
+    # Add save button for fractal dimension plot
+    save_btn3 = ttk.Button(
+        tab3, 
+        text="Save Figure (300 DPI)", 
+        command=lambda: save_figure(fig3, f"{base_name}_fractal_dimension")
+    )
+    save_btn3.pack(pady=5)
+    
     # Set first tab as active
     output_notebook.select(0)
 
 def run_analysis():
     file_path = entry_file.get()
     if not file_path:
-        status_var.set("Pilih file katalog gempa terlebih dahulu!")
+        status_var.set("Please select an earthquake catalog file first!")
         status_label.config(fg="red")
         return
     
@@ -380,7 +538,17 @@ def run_analysis():
         
         # Create EqCat objects
         eqCat = EqCat()
-        eqCat.loadMatBin(file_path)
+        
+        # Load file based on format
+        if file_path.lower().endswith('.mat'):
+            eqCat.loadMatBin(file_path)
+        elif file_path.lower().endswith('.csv'):
+            eqCat = parse_csv_to_eqcat(file_path)
+        else:
+            status_var.set("Unsupported file format")
+            status_label.config(fg="red")
+            return
+            
         status_var.set(f"Total events: {eqCat.size()}")
         status_label.config(fg="blue")
         root.update()
@@ -443,7 +611,7 @@ def run_analysis():
         
         # Save results to file
         output_dir = os.path.dirname(file_path)
-        output_base = os.path.basename(file_path).replace('.mat', '')
+        output_base = os.path.basename(file_path).replace('.mat', '').replace('.csv', '')
         
         # Add custom suffix to filenames if provided
         if custom_suffix:
@@ -512,6 +680,13 @@ def run_analysis():
         # Clear output tabs and add new result tabs
         clear_output_plots()
         
+        # Get base filename for saving figures
+        output_base = os.path.basename(file_path).replace('.mat', '').replace('.csv', '')
+        if custom_suffix:
+            figure_base_name = f"{output_base}_Mc_{M_c}{custom_suffix}"
+        else:
+            figure_base_name = f"{output_base}_Mc_{M_c}"
+        
         # Add NND histogram tab
         nnd_tab = ttk.Frame(output_notebook)
         output_notebook.add(nnd_tab, text='NND Histogram')
@@ -536,12 +711,20 @@ def run_analysis():
         ax_nnd.set_ylabel('Number of Events')
         ax_nnd.grid(True)
         ax_nnd.set_xlim(-13, 0)
-        ax_nnd.set_title(f"Distribusi log₁₀(η) untuk Clustering Earthquake (Mc={M_c})")
+        ax_nnd.set_title(f"log₁₀(η) Distribution for Earthquake Clustering (Mc={M_c})")
         fig_nnd.tight_layout()
         
         canvas_nnd = FigureCanvasTkAgg(fig_nnd, master=nnd_tab)
         canvas_nnd.draw()
         canvas_nnd.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Add save button for NND histogram
+        save_btn_nnd = ttk.Button(
+            nnd_tab,
+            text="Save Figure (300 DPI)",
+            command=lambda: save_figure(fig_nnd, f"{figure_base_name}_NND_histogram")
+        )
+        save_btn_nnd.pack(pady=5)
         
         # Add R-T plot tab
         rt_tab = ttk.Frame(output_notebook)
@@ -576,21 +759,46 @@ def run_analysis():
         canvas_rt.draw()
         canvas_rt.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
+        # Add save button for R-T plot
+        save_btn_rt = ttk.Button(
+            rt_tab,
+            text="Save Figure (300 DPI)",
+            command=lambda: save_figure(fig_rt, f"{figure_base_name}_RT_plot")
+        )
+        save_btn_rt.pack(pady=5)
+        
         # Select first tab to display
         output_notebook.select(0)
         
         # Update status - using StringVar and messagebox for results
-        status_var.set(f"Analisis selesai! η₀={eta_0:.3f}")
+        status_var.set(f"Analysis complete! η₀={eta_0:.3f}")
         status_label.config(fg="green")
         
         # Show a separate message box with file paths
         messagebox.showinfo("Output Files", 
-                           f"Hasil disimpan di:\n\n1. {output_nnd_file}\n\n2. {output_eta_file}\n\n3. {output_rt_file}")
+                           f"Results saved to:\n\n1. {output_nnd_file}\n\n2. {output_eta_file}\n\n3. {output_rt_file}")
         
     except Exception as e:
         status_var.set(f"Error: {str(e)}")
         status_label.config(fg="red")
         messagebox.showerror("Error", str(e))
+
+# Create parameter descriptions
+param_descriptions = {
+    "Mc": "Magnitude Completeness (Mc) represents the lowest magnitude at which all earthquakes in a space-time volume are detected. Earthquakes below this threshold may not be completely recorded in the catalog. Mc is crucial for reliable statistical analysis of seismicity.",
+    
+    "b-value": "The b-value is a parameter in the Gutenberg-Richter relationship (log(N)=a-b*M) that describes the relative size distribution of earthquakes. Typically around 1.0, it represents the slope of the frequency-magnitude distribution. Higher b-values indicate a relatively higher proportion of small earthquakes compared to large ones.",
+    
+    "D": "Fractal Dimension (D) characterizes the spatial clustering of earthquakes. It quantifies how earthquakes fill space. Lower D values indicate stronger clustering, while higher values suggest a more uniform distribution. For earthquakes, D typically ranges from 1.0 to 2.7.",
+    
+    "rmax": "Maximum distance (in kilometers) used for nearest-neighbor distance calculations. This parameter limits the spatial search radius when identifying potential aftershocks or related events. Setting this value too low might miss important connections, while setting it too high might introduce spurious relationships.",
+    
+    "tmax": "Maximum time window (in years) used for nearest-neighbor calculations. This parameter defines the temporal window for identifying related events. It should be set according to the expected duration of aftershock sequences in the region under study.",
+    
+    "iterations": "Number of bootstrap iterations for calculating the background rate (η₀). Higher values provide more robust estimates but require more computational time. Typically 100-1000 iterations are sufficient for stable results.",
+    
+    "custom_suffix": "Optional text added to output filenames to distinguish different analysis runs. Useful when comparing results with different parameter settings."
+}
 
 # Create GUI
 root = tk.Tk()
@@ -613,7 +821,7 @@ right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
 frame_file = ttk.LabelFrame(left_frame, text="File Selection", padding=(5, 5, 5, 5))
 frame_file.pack(pady=5, fill=tk.X)
 
-ttk.Label(frame_file, text="Pilih File Katalog .mat").grid(row=0, column=0, sticky=tk.W, pady=2)
+ttk.Label(frame_file, text="Select Catalog File (.mat or .csv)").grid(row=0, column=0, sticky=tk.W, pady=2)
 entry_file = ttk.Entry(frame_file, width=30)
 entry_file.grid(row=0, column=1, padx=5, pady=2)
 ttk.Button(frame_file, text="Browse", command=load_file).grid(row=0, column=2, padx=5, pady=2)
@@ -624,6 +832,13 @@ auto_calculate_var.set(True)  # Default to auto calculate
 auto_calc_check = ttk.Checkbutton(frame_file, text="Auto Calculate on Load", variable=auto_calculate_var)
 auto_calc_check.grid(row=1, column=1, sticky=tk.W, pady=2)
 
+# Function to create help button that displays parameter description
+def create_help_button(parent, row, column, param_name):
+    help_button = ttk.Button(parent, text="?", width=2,
+                            command=lambda: show_tooltip(param_name, param_descriptions[param_name]))
+    help_button.grid(row=row, column=column, padx=2)
+    return help_button
+
 # Parameters frame
 frame_params = ttk.LabelFrame(left_frame, text="Parameter Estimation", padding=(5, 5, 5, 5))
 frame_params.pack(pady=5, fill=tk.X)
@@ -633,21 +848,24 @@ ttk.Label(frame_params, text="Mc (Magnitude Cutoff)").grid(row=0, column=0, stic
 entry_Mc = ttk.Entry(frame_params, width=10)
 entry_Mc.grid(row=0, column=1, sticky=tk.W, padx=5)
 entry_Mc.insert(0, "")
+create_help_button(frame_params, 0, 2, "Mc")
 
 # b (b-value)
 ttk.Label(frame_params, text="b-value").grid(row=1, column=0, sticky=tk.W, pady=5)
 entry_b = ttk.Entry(frame_params, width=10)
 entry_b.grid(row=1, column=1, sticky=tk.W, padx=5)
 entry_b.insert(0, "")
+create_help_button(frame_params, 1, 2, "b-value")
 
 # D (Fractal Dimension)
 ttk.Label(frame_params, text="D (Fractal Dimension)").grid(row=2, column=0, sticky=tk.W, pady=5)
 entry_D = ttk.Entry(frame_params, width=10)
 entry_D.grid(row=2, column=1, sticky=tk.W, padx=5)
 entry_D.insert(0, "")
+create_help_button(frame_params, 2, 2, "D")
 
 # Button to calculate parameters
-ttk.Button(frame_params, text="Calculate Parameters", command=calculate_parameters).grid(row=3, column=0, columnspan=2, pady=5)
+ttk.Button(frame_params, text="Calculate Parameters", command=calculate_parameters).grid(row=3, column=0, columnspan=3, pady=5)
 
 # Additional parameters
 frame_params2 = ttk.LabelFrame(left_frame, text="Clustering Parameters", padding=(5, 5, 5, 5))
@@ -658,32 +876,36 @@ ttk.Label(frame_params2, text="rmax (km)").grid(row=0, column=0, sticky=tk.W, pa
 entry_rmax = ttk.Entry(frame_params2, width=10)
 entry_rmax.grid(row=0, column=1, sticky=tk.W, padx=5)
 entry_rmax.insert(0, "50")  # Default value
+create_help_button(frame_params2, 0, 2, "rmax")
 
 # tmax (Maximum time in years)
 ttk.Label(frame_params2, text="tmax (years)").grid(row=1, column=0, sticky=tk.W, pady=5)
 entry_tmax = ttk.Entry(frame_params2, width=10)
 entry_tmax.grid(row=1, column=1, sticky=tk.W, padx=5)
 entry_tmax.insert(0, "1")  # Default value
+create_help_button(frame_params2, 1, 2, "tmax")
 
 # Number of bootstraps
-ttk.Label(frame_params2, text="Iteration").grid(row=2, column=0, sticky=tk.W, pady=5)
+ttk.Label(frame_params2, text="Iterations").grid(row=2, column=0, sticky=tk.W, pady=5)
 entry_nBoot = ttk.Entry(frame_params2, width=10)
 entry_nBoot.grid(row=2, column=1, sticky=tk.W, padx=5)
 entry_nBoot.insert(0, "100")  # Default value
+create_help_button(frame_params2, 2, 2, "iterations")
 
 # Custom suffix for output files
 ttk.Label(frame_params2, text="Custom Suffix").grid(row=3, column=0, sticky=tk.W, pady=5)
 entry_suffix = ttk.Entry(frame_params2, width=10)
 entry_suffix.grid(row=3, column=1, sticky=tk.W, padx=5)
 entry_suffix.insert(0, "")
-ttk.Label(frame_params2, text="(Opsional)").grid(row=3, column=2, sticky=tk.W)
+create_help_button(frame_params2, 3, 2, "custom_suffix")
+ttk.Label(frame_params2, text="(Optional)").grid(row=3, column=3, sticky=tk.W)
 
 # Info frame
 info_frame = ttk.Frame(left_frame)
 info_frame.pack(pady=5, fill=tk.X)
 
 # Info label
-info_label = tk.Label(info_frame, text="η₀ akan dihitung otomatis berdasarkan persentil ke-1 dari distribusi NND", 
+info_label = tk.Label(info_frame, text="η₀ will be automatically calculated based on the 1st percentile of the NND distribution", 
                       fg="blue", font=("Arial", 9))
 info_label.pack(pady=5)
 
@@ -693,7 +915,7 @@ run_button.pack(pady=10)
 
 # Status label
 status_var = tk.StringVar()
-status_var.set("Siap menjalankan analisis")
+status_var.set("Ready to run analysis")
 status_label = tk.Label(left_frame, textvariable=status_var, fg="black", font=("Arial", 10, "bold"))
 status_label.pack(pady=10)
 
