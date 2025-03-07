@@ -209,6 +209,8 @@ def calculate_parameters():
         # ---------------------------------------------------------
         # Calculate Mc and b-value using improved FMD class from gr.py
         # ---------------------------------------------------------
+        iRanSeed = 1234
+        np.random.seed(iRanSeed)
         magnitudes = eqCat.data['Mag']
         
         # Create FMD object
